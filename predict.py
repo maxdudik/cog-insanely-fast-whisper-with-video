@@ -69,8 +69,8 @@ class Predictor(BasePredictor):
             description="Optional. Language spoken in the audio, specify None to perform language detection.",
         ),
         batch_size: int = Input(
-            default=24,
-            description="Number of parallel batches you want to compute. Reduce if you face OOMs. (default: 24).",
+            default=64,
+            description="Number of parallel batches you want to compute. Reduce if you face OOMs. (default: 64).",
         ),
         timestamp: str = Input(
             default="chunk",

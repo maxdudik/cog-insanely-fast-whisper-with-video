@@ -1,5 +1,5 @@
 import uuid
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import torch
@@ -50,11 +50,11 @@ class Predictor(BasePredictor):
 
     def predict(
         self,
-        audio: Optional[Path] = Input(
+        audio: Path = Input(
             default=None,
             description="Audio file. Either this or url must be provided.",
         ),
-        url: Optional[str] = Input(
+        url: str = Input(
             default=None,
             description="Video URL for yt-dlp to download the audio from. Either this or audio must be provided.",
         ),
@@ -63,7 +63,7 @@ class Predictor(BasePredictor):
             default="transcribe",
             description="Task to perform: transcribe or translate to another language. (default: transcribe).",
         ),
-        language: Optional[str] = Input(
+        language: str = Input(
             default=None,
             description="Optional. Language spoken in the audio, specify None to perform language detection.",
         ),
@@ -80,7 +80,7 @@ class Predictor(BasePredictor):
             default=False,
             description="Use Pyannote.audio to diarise the audio clips. You will need to provide hf_token below too.",
         ),
-        hf_token: Optional[str] = Input(
+        hf_token: str = Input(
             default=None,
             description="Provide a hf.co/settings/token for Pyannote.audio to diarise the audio clips. You need to agree to the terms in 'https://huggingface.co/pyannote/speaker-diarization-3.1' and 'https://huggingface.co/pyannote/segmentation-3.0' first.",
         ),

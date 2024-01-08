@@ -113,6 +113,7 @@ class Predictor(BasePredictor):
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download(url)
+                print(f"Downloaded audio from the video URL {url}")
             audio = f"{rand_id}.mp3"
 
         assert audio is not None, "Audio file not found"

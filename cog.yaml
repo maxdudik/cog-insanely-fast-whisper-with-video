@@ -19,6 +19,6 @@ build:
     - "rich==13.7.0"
     - pipx
   run: 
-    - pipx runpip insanely-fast-whisper install flash-attn --no-build-isolation
+    - pipx runpip incredibly-fast-whisper install flash-attn --no-build-isolation
 
 predict: "predict.py:Predictor"

@@ -164,6 +164,9 @@ class Predictor(BasePredictor):
             if url is not None:
                 print("Removing downloaded audio file")
                 os.remove(audio)
+            print(
+                f"max gpu memory allocated over runtime: {torch.cuda.max_memory_reserved() / (1024 ** 3):.2f} GB"
+            )
 
 
 def preprocess_inputs(inputs):

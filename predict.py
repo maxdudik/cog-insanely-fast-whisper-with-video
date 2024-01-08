@@ -127,7 +127,7 @@ class Predictor(BasePredictor):
                     return_timestamps="word" if timestamp == "word" else True,
                 )
 
-                if diarize_audio:
+                if diarise_audio:
                     if self.diarization_pipeline is None:
                         try:
                             self.diarization_pipeline = Pipeline.from_pretrained(

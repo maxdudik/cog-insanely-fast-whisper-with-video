@@ -1,15 +1,18 @@
-from typing import Any
-import torch
+import uuid
+from typing import Any, Optional
+
 import numpy as np
+import torch
+import yt_dlp
+from cog import BasePredictor, Input, Path
+from pyannote.audio import Pipeline
 from transformers import (
     WhisperFeatureExtractor,
-    WhisperTokenizerFast,
     WhisperForConditionalGeneration,
+    WhisperTokenizerFast,
     pipeline,
 )
-from pyannote.audio import Pipeline
 from transformers.pipelines.audio_utils import ffmpeg_read
-from cog import BasePredictor, Input, Path
 
 
 class Predictor(BasePredictor):
@@ -47,13 +50,20 @@ class Predictor(BasePredictor):
 
     def predict(
         self,
-        audio: Path = Input(description="Audio file"),
+        audio: Optional[Path] = Input(
+            default=None,
+            description="Audio file. Either this or url must be provided.",
+        ),
+        url: Optional[str] = Input(
+            default=None,
+            description="Video URL for yt-dlp to download the audio from. Either this or audio must be provided.",
+        ),
         task: str = Input(
             choices=["transcribe", "translate"],
             default="transcribe",
             description="Task to perform: transcribe or translate to another language. (default: transcribe).",
         ),
-        language: str = Input(
+        language: Optional[str] = Input(
             default=None,
             description="Optional. Language spoken in the audio, specify None to perform language detection.",
         ),
@@ -70,53 +80,78 @@ class Predictor(BasePredictor):
             default=False,
             description="Use Pyannote.audio to diarise the audio clips. You will need to provide hf_token below too.",
         ),
-        hf_token: str = Input(
+        hf_token: Optional[str] = Input(
             default=None,
             description="Provide a hf.co/settings/token for Pyannote.audio to diarise the audio clips. You need to agree to the terms in 'https://huggingface.co/pyannote/speaker-diarization-3.1' and 'https://huggingface.co/pyannote/segmentation-3.0' first.",
         ),
     ) -> Any:
-        """Transcribes and optionally translates a single audio file"""
+        """Transcribes and optionally translates a single audio file, or video URL"""
 
         if diarise_audio:
             assert (
                 hf_token is not None
             ), "Please provide hf_token to diarise the audio clips"
 
-        outputs = self.pipe(
-            str(audio),
-            chunk_length_s=30,
-            batch_size=batch_size,
-            generate_kwargs={"task": task, "language": language},
-            return_timestamps="word" if timestamp == "word" else True,
-        )
+        assert (
+            audio is not None or url is not None
+        ), "Please provide either audio or url"
+        assert not (
+            audio is not None and url is not None
+        ), "Please provide either audio or url, not both"
 
-        if diarize_audio:
-            if self.diarization_pipeline is None:
-                try:
-                    self.diarization_pipeline = Pipeline.from_pretrained(
-                        "pyannote/speaker-diarization-3.1",
-                        use_auth_token=hf_token,
-                        cache_dir=self.model_cache,
-                    )
-                    self.diarization_pipeline.to(torch.device(self.device))
-                    print("diarization_pipeline loaded!")
-                except Exception as e:
-                    print(
-                        f"https://huggingface.co/pyannote/speaker-diarization-3.1 cannot be loaded, please check the hf_token provided.: {e}"
-                    )
-            if self.diarization_pipeline is not None:
-                print("Segmenting the audio clips.")
-                inputs, diarizer_inputs = preprocess_inputs(inputs=str(audio))
-                segments = diarize_audio(diarizer_inputs, self.diarization_pipeline)
-                segmented_transcript = post_process_segments_and_transcripts(
-                    segments, outputs["chunks"], group_by_speaker=False
-                )
-                segmented_transcript.append(outputs)
-                print("Voila!✨ Your file has been transcribed & speaker segmented!")
-                return segmented_transcript
+        if not audio:
+            rand_id = uuid.uuid4().hex
+            ydl_opts = {
+                "format": "bestaudio/best",
+                "postprocessors": [
+                    {
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": "mp3",
+                    }
+                ],
+                "outtmpl": f"{rand_id}.%(ext)s",
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download(url)
+            audio = f"{rand_id}.mp3"
 
-        print("Voila!✨ Your file has been transcribed!")
-        return outputs
+        assert audio is not None, "Audio file not found"
+        with torch.inference_mode():
+            outputs = self.pipe(
+                str(audio),
+                chunk_length_s=30,
+                batch_size=batch_size,
+                generate_kwargs={"task": task, "language": language},
+                return_timestamps="word" if timestamp == "word" else True,
+            )
+
+            if diarize_audio:
+                if self.diarization_pipeline is None:
+                    try:
+                        self.diarization_pipeline = Pipeline.from_pretrained(
+                            "pyannote/speaker-diarization-3.1",
+                            use_auth_token=hf_token,
+                            cache_dir=self.model_cache,
+                        )
+                        self.diarization_pipeline.to(torch.device(self.device))
+                        print("diarization_pipeline loaded!")
+                    except Exception as e:
+                        print(
+                            f"https://huggingface.co/pyannote/speaker-diarization-3.1 cannot be loaded, please check the hf_token provided.: {e}"
+                        )
+                if self.diarization_pipeline is not None:
+                    print("Segmenting the audio clips.")
+                    inputs, diarizer_inputs = preprocess_inputs(inputs=str(audio))
+                    segments = diarize_audio(diarizer_inputs, self.diarization_pipeline)
+                    segmented_transcript = post_process_segments_and_transcripts(
+                        segments, outputs["chunks"], group_by_speaker=False
+                    )
+                    segmented_transcript.append(outputs)
+                    print("Voila!✨ Your file has been transcribed & speaker segmented!")
+                    return segmented_transcript
+
+            print("Voila!✨ Your file has been transcribed!")
+            return outputs
 
 
 def preprocess_inputs(inputs):

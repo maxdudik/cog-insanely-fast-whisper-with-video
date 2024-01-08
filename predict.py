@@ -1,3 +1,4 @@
+import os
 import uuid
 from typing import Any
 
@@ -86,73 +87,83 @@ class Predictor(BasePredictor):
         ),
     ) -> Any:
         """Transcribes and optionally translates a single audio file, or video URL"""
+        try:
+            if diarise_audio:
+                assert (
+                    hf_token is not None
+                ), "Please provide hf_token to diarise the audio clips"
 
-        if diarise_audio:
             assert (
-                hf_token is not None
-            ), "Please provide hf_token to diarise the audio clips"
+                audio is not None or url is not None
+            ), "Please provide either audio or url"
+            assert not (
+                audio is not None and url is not None
+            ), "Please provide either audio or url, not both"
 
-        assert (
-            audio is not None or url is not None
-        ), "Please provide either audio or url"
-        assert not (
-            audio is not None and url is not None
-        ), "Please provide either audio or url, not both"
+            if not audio:
+                rand_id = uuid.uuid4().hex
+                ydl_opts = {
+                    "format": "bestaudio/best",
+                    "postprocessors": [
+                        {
+                            "key": "FFmpegExtractAudio",
+                            "preferredcodec": "mp3",
+                        }
+                    ],
+                    "outtmpl": f"{rand_id}.%(ext)s",
+                }
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download(url)
+                    print(f"Downloaded audio from the video URL {url}")
+                audio = f"{rand_id}.mp3"
 
-        if not audio:
-            rand_id = uuid.uuid4().hex
-            ydl_opts = {
-                "format": "bestaudio/best",
-                "postprocessors": [
-                    {
-                        "key": "FFmpegExtractAudio",
-                        "preferredcodec": "mp3",
-                    }
-                ],
-                "outtmpl": f"{rand_id}.%(ext)s",
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download(url)
-                print(f"Downloaded audio from the video URL {url}")
-            audio = f"{rand_id}.mp3"
+            assert audio is not None, "Audio file not found"
+            with torch.inference_mode():
+                outputs = self.pipe(
+                    str(audio),
+                    chunk_length_s=30,
+                    batch_size=batch_size,
+                    generate_kwargs={"task": task, "language": language},
+                    return_timestamps="word" if timestamp == "word" else True,
+                )
 
-        assert audio is not None, "Audio file not found"
-        with torch.inference_mode():
-            outputs = self.pipe(
-                str(audio),
-                chunk_length_s=30,
-                batch_size=batch_size,
-                generate_kwargs={"task": task, "language": language},
-                return_timestamps="word" if timestamp == "word" else True,
-            )
-
-            if diarize_audio:
-                if self.diarization_pipeline is None:
-                    try:
-                        self.diarization_pipeline = Pipeline.from_pretrained(
-                            "pyannote/speaker-diarization-3.1",
-                            use_auth_token=hf_token,
-                            cache_dir=self.model_cache,
+                if diarize_audio:
+                    if self.diarization_pipeline is None:
+                        try:
+                            self.diarization_pipeline = Pipeline.from_pretrained(
+                                "pyannote/speaker-diarization-3.1",
+                                use_auth_token=hf_token,
+                                cache_dir=self.model_cache,
+                            )
+                            self.diarization_pipeline.to(torch.device(self.device))
+                            print("diarization_pipeline loaded!")
+                        except Exception as e:
+                            print(
+                                f"https://huggingface.co/pyannote/speaker-diarization-3.1 cannot be loaded, please check the hf_token provided.: {e}"
+                            )
+                    if self.diarization_pipeline is not None:
+                        print("Segmenting the audio clips.")
+                        inputs, diarizer_inputs = preprocess_inputs(inputs=str(audio))
+                        segments = diarize_audio(
+                            diarizer_inputs, self.diarization_pipeline
                         )
-                        self.diarization_pipeline.to(torch.device(self.device))
-                        print("diarization_pipeline loaded!")
-                    except Exception as e:
+                        segmented_transcript = post_process_segments_and_transcripts(
+                            segments, outputs["chunks"], group_by_speaker=False
+                        )
+                        segmented_transcript.append(outputs)
                         print(
-                            f"https://huggingface.co/pyannote/speaker-diarization-3.1 cannot be loaded, please check the hf_token provided.: {e}"
+                            "Voila!✨ Your file has been transcribed & speaker segmented!"
                         )
-                if self.diarization_pipeline is not None:
-                    print("Segmenting the audio clips.")
-                    inputs, diarizer_inputs = preprocess_inputs(inputs=str(audio))
-                    segments = diarize_audio(diarizer_inputs, self.diarization_pipeline)
-                    segmented_transcript = post_process_segments_and_transcripts(
-                        segments, outputs["chunks"], group_by_speaker=False
-                    )
-                    segmented_transcript.append(outputs)
-                    print("Voila!✨ Your file has been transcribed & speaker segmented!")
-                    return segmented_transcript
+                        return segmented_transcript
 
-            print("Voila!✨ Your file has been transcribed!")
-            return outputs
+                print("Voila!✨ Your file has been transcribed!")
+                return outputs
+        except Exception as e:
+            raise e
+        finally:
+            if url is not None:
+                print("Removing downloaded audio file")
+                os.remove(audio)
 
 
 def preprocess_inputs(inputs):

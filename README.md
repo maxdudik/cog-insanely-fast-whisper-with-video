@@ -1,3 +1,5 @@
+[Run it now, on replicate.com](https://replicate.com/turian/insanely-fast-whisper-with-video)
+
 # What We've Done Here
 
 * Cleaned up the code from [chenxwh/insanely-fast-whisper](https://github.com/chenxwh/insanely-fast-whisper) so that we can easily install later pypi versions of [insanely-fast-whisper](https://pypi.org/project/insanely-fast-whisper/).

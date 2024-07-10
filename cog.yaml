@@ -22,7 +22,7 @@ build:
   run: 
     # Install commands from the insanely-fast-whisper README
     # and https://github.com/Vaibhavs10/insanely-fast-whisper/issues/133
-    - pipx install insanely-fast-whisper==0.0.13 --force --pip-args="--ignore-requires-python"
+    - pipx install insanely-fast-whisper --force --pip-args="--ignore-requires-python"
     - pipx runpip insanely-fast-whisper install wheel
     - pipx runpip insanely-fast-whisper install flash-attn --no-build-isolation
 
